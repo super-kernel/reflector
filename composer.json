@@ -1,0 +1,35 @@
+{
+    "name": "super-kernel/reflector",
+    "description": "The reflector component for super-kernel.",
+    "type": "library",
+    "license": "MIT",
+    "keywords": [
+        "php",
+        "framework",
+        "super-kernel",
+        "contract",
+        "interfaces"
+    ],
+    "homepage": "https://github.com/super-kernel/contract",
+    "support": {
+        "issues": "https://github.com/super-kernel/contract/issues",
+        "source": "https://github.com/super-kernel/contract"
+    },
+    "autoload": {
+        "psr-4": {
+            "SuperKernel\\Reflector\\": "src/"
+        }
+    },
+    "config": {
+        "classmap-authoritative": true,
+        "optimize-autoloader": true,
+        "sort-packages": true
+    },
+    "minimum-stability": "stable",
+    "prefer-stable": true,
+    "require": {
+        "php": "~8.4.0",
+        "super-kernel/attribute": "~1.0.0",
+        "super-kernel/contract": "~1.0.0"
+    }
+}
