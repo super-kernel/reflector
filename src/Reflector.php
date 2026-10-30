@@ -25,6 +25,9 @@ use ReflectionProperty;
 use ReflectionReference;
 use ReflectionZendExtension;
 use SuperKernel\Contract\ReflectorInterface;
+use SuperKernel\Reflector\Cache\ClassReflectionCache;
+use SuperKernel\Reflector\Cache\EnumReflectionCache;
+use SuperKernel\Reflector\Cache\SymbolKey;
 use UnitEnum;
 use WeakMap;
 
@@ -32,17 +35,14 @@ use function array_key_exists;
 use function count;
 use function is_object;
 use function is_string;
-use function str_starts_with;
 use function strtolower;
-use function substr;
 
 /**
  * Caches native reflection objects for this instance.
  */
 final class Reflector implements ReflectorInterface
 {
-    /** @var array<string, ReflectionClass<object>> */
-    private array $classes = [];
+    private ?ClassReflectionCache $classCache = null;
 
     /** @var array<string, array<string, ReflectionClassConstant>> */
     private array $classConstants = [];
@@ -50,8 +50,7 @@ final class Reflector implements ReflectorInterface
     /** @var array<string, ReflectionConstant> */
     private array $constants = [];
 
-    /** @var array<string, ReflectionEnum<UnitEnum>> */
-    private array $enums = [];
+    private ?EnumReflectionCache $enumCache = null;
 
     /** @var array<string, array<string, ReflectionEnumUnitCase>> */
     private array $enumUnitCases = [];
@@ -97,7 +96,7 @@ final class Reflector implements ReflectorInterface
 
     public function reflectClassConstant(object|string $class, string $constant): ReflectionClassConstant
     {
-        $className = $this->reflectClass($class)->getName();
+        $className = ($this->classCache ??= new ClassReflectionCache())->reflect($class)->getName();
 
         return $this->classConstants[$className][$constant]
             ??= new ReflectionClassConstant($className, $constant);
@@ -105,28 +104,7 @@ final class Reflector implements ReflectorInterface
 
     public function reflectClass(object|string $class): ReflectionClass
     {
-        $className = is_object($class) ? $class::class : $class;
-        $lookupKey = $this->symbolKey($className);
-
-        if (isset($this->classes[$lookupKey])) {
-            return $this->classes[$lookupKey];
-        }
-
-        $reflection = new ReflectionClass($class);
-        $canonicalKey = $this->symbolKey($reflection->getName());
-        $reflection = $this->classes[$canonicalKey] ??= $reflection;
-        $this->classes[$lookupKey] = $reflection;
-
-        return $reflection;
-    }
-
-    private function symbolKey(string $symbol): string
-    {
-        if (str_starts_with($symbol, '\\')) {
-            $symbol = substr($symbol, 1);
-        }
-
-        return strtolower($symbol);
+        return ($this->classCache ??= new ClassReflectionCache())->reflect($class);
     }
 
     public function reflectConstant(string $name): ReflectionConstant
@@ -145,7 +123,7 @@ final class Reflector implements ReflectorInterface
 
     public function reflectEnumUnitCase(UnitEnum|string $class, string $constant): ReflectionEnumUnitCase
     {
-        $enum = $this->reflectEnum($class);
+        $enum = ($this->enumCache ??= new EnumReflectionCache())->reflect($class);
         $className = $enum->getName();
 
         if (isset($this->enumUnitCases[$className][$constant])) {
@@ -164,24 +142,12 @@ final class Reflector implements ReflectorInterface
 
     public function reflectEnum(UnitEnum|string $class): ReflectionEnum
     {
-        $className = $class instanceof UnitEnum ? $class::class : $class;
-        $lookupKey = $this->symbolKey($className);
-
-        if (isset($this->enums[$lookupKey])) {
-            return $this->enums[$lookupKey];
-        }
-
-        $reflection = new ReflectionEnum($class);
-        $canonicalKey = $this->symbolKey($reflection->getName());
-        $reflection = $this->enums[$canonicalKey] ??= $reflection;
-        $this->enums[$lookupKey] = $reflection;
-
-        return $reflection;
+        return ($this->enumCache ??= new EnumReflectionCache())->reflect($class);
     }
 
     public function reflectEnumBackedCase(BackedEnum|string $class, string $constant): ReflectionEnumBackedCase
     {
-        $enum = $this->reflectEnum($class);
+        $enum = ($this->enumCache ??= new EnumReflectionCache())->reflect($class);
         $className = $enum->getName();
 
         if (isset($this->enumBackedCases[$className][$constant])) {
@@ -197,14 +163,14 @@ final class Reflector implements ReflectorInterface
 
     public function reflectExtension(string $name): ReflectionExtension
     {
-        $lookupKey = $this->symbolKey($name);
+        $lookupKey = SymbolKey::fromName($name);
 
         if (isset($this->extensions[$lookupKey])) {
             return $this->extensions[$lookupKey];
         }
 
         $reflection = new ReflectionExtension($name);
-        $canonicalKey = $this->symbolKey($reflection->getName());
+        $canonicalKey = SymbolKey::fromName($reflection->getName());
         $reflection = $this->extensions[$canonicalKey] ??= $reflection;
         $this->extensions[$lookupKey] = $reflection;
 
@@ -213,14 +179,14 @@ final class Reflector implements ReflectorInterface
 
     public function reflectZendExtension(string $name): ReflectionZendExtension
     {
-        $lookupKey = $this->symbolKey($name);
+        $lookupKey = SymbolKey::fromName($name);
 
         if (isset($this->zendExtensions[$lookupKey])) {
             return $this->zendExtensions[$lookupKey];
         }
 
         $reflection = new ReflectionZendExtension($name);
-        $canonicalKey = $this->symbolKey($reflection->getName());
+        $canonicalKey = SymbolKey::fromName($reflection->getName());
         $reflection = $this->zendExtensions[$canonicalKey] ??= $reflection;
         $this->zendExtensions[$lookupKey] = $reflection;
 
@@ -235,14 +201,14 @@ final class Reflector implements ReflectorInterface
             return $closureFunctions[$function] ??= new ReflectionFunction($function);
         }
 
-        $lookupKey = $this->symbolKey($function);
+        $lookupKey = SymbolKey::fromName($function);
 
         if (isset($this->functions[$lookupKey])) {
             return $this->functions[$lookupKey];
         }
 
         $reflection = new ReflectionFunction($function);
-        $canonicalKey = $this->symbolKey($reflection->getName());
+        $canonicalKey = SymbolKey::fromName($reflection->getName());
         $reflection = $this->functions[$canonicalKey] ??= $reflection;
         $this->functions[$lookupKey] = $reflection;
 
@@ -259,7 +225,7 @@ final class Reflector implements ReflectorInterface
             return $this->methods[$className][$methodKey] ??= $reflection;
         }
 
-        $className = $this->reflectClass($objectOrMethod)->getName();
+        $className = ($this->classCache ??= new ClassReflectionCache())->reflect($objectOrMethod)->getName();
         $methodKey = strtolower($method);
 
         return $this->methods[$className][$methodKey]
@@ -268,7 +234,7 @@ final class Reflector implements ReflectorInterface
 
     public function reflectParameter(callable|array|string $function, int|string $parameter): ReflectionParameter
     {
-        $parameterKey = $this->parameterKey($parameter);
+        $parameterKey = is_string($parameter) ? 'name:' . $parameter : 'position:' . $parameter;
 
         if (is_object($function)) {
             $objectParameters = $this->objectParameters ??= new WeakMap();
@@ -279,26 +245,50 @@ final class Reflector implements ReflectorInterface
             }
 
             $reflection = new ReflectionParameter($function, $parameter);
-            $reflection = $parameters[$this->parameterKey(
-                $reflection->getPosition(),
-            )] ??= $reflection;
-            $parameters[$this->parameterKey($reflection->getName())] = $reflection;
+            $reflection = $parameters['position:' . $reflection->getPosition()] ??= $reflection;
+            $parameters['name:' . $reflection->getName()] = $reflection;
             $parameters[$parameterKey] = $reflection;
             $objectParameters[$function] = $parameters;
 
             return $reflection;
         }
 
-        $callableKey = $this->callableKey($function);
+        $callableKey = null;
+
+        if (is_string($function)) {
+            $callableKey = 'callable:' . SymbolKey::fromName($function);
+        } elseif (
+            2 === count($function)
+            && array_key_exists(0, $function)
+            && array_key_exists(1, $function)
+        ) {
+            $class = $function[0];
+            $method = $function[1];
+
+            if ((is_object($class) || is_string($class)) && is_string($method)) {
+                $className = is_object($class) ? $class::class : $class;
+                $callableKey = 'method:' . SymbolKey::fromName($className) . "\0" . strtolower($method);
+            }
+        }
 
         if (null !== $callableKey && isset($this->parameters[$callableKey][$parameterKey])) {
             return $this->parameters[$callableKey][$parameterKey];
         }
 
         $reflection = new ReflectionParameter($function, $parameter);
-        $canonicalCallableKey = $this->declaringCallableKey($reflection);
-        $positionKey = $this->parameterKey($reflection->getPosition());
-        $nameKey = $this->parameterKey($reflection->getName());
+        $declaringFunction = $reflection->getDeclaringFunction();
+
+        if ($declaringFunction instanceof ReflectionMethod) {
+            $canonicalCallableKey = 'method:'
+                . SymbolKey::fromName($declaringFunction->getDeclaringClass()->getName())
+                . "\0"
+                . strtolower($declaringFunction->getName());
+        } else {
+            $canonicalCallableKey = 'function:' . SymbolKey::fromName($declaringFunction->getName());
+        }
+
+        $positionKey = 'position:' . $reflection->getPosition();
+        $nameKey = 'name:' . $reflection->getName();
         $reflection = $this->parameters[$canonicalCallableKey][$positionKey] ??= $reflection;
         $this->parameters[$canonicalCallableKey][$nameKey] = $reflection;
 
@@ -311,52 +301,6 @@ final class Reflector implements ReflectorInterface
         return $reflection;
     }
 
-    private function parameterKey(int|string $parameter): string
-    {
-        return is_string($parameter) ? 'name:' . $parameter : 'position:' . $parameter;
-    }
-
-    /** @param array<array-key, mixed>|string $function */
-    private function callableKey(array|string $function): ?string
-    {
-        if (is_string($function)) {
-            return 'callable:' . $this->symbolKey($function);
-        }
-
-        if (
-            2 !== count($function)
-            || !array_key_exists(0, $function)
-            || !array_key_exists(1, $function)
-        ) {
-            return null;
-        }
-
-        $class = $function[0];
-        $method = $function[1];
-
-        if ((!is_object($class) && !is_string($class)) || !is_string($method)) {
-            return null;
-        }
-
-        $className = is_object($class) ? $class::class : $class;
-
-        return 'method:' . $this->symbolKey($className) . "\0" . strtolower($method);
-    }
-
-    private function declaringCallableKey(ReflectionParameter $parameter): string
-    {
-        $function = $parameter->getDeclaringFunction();
-
-        if ($function instanceof ReflectionMethod) {
-            return 'method:'
-                . $this->symbolKey($function->getDeclaringClass()->getName())
-                . "\0"
-                . strtolower($function->getName());
-        }
-
-        return 'function:' . $this->symbolKey($function->getName());
-    }
-
     public function reflectObject(object $object): ReflectionObject
     {
         $objects = $this->objects ??= new WeakMap();
@@ -366,7 +310,7 @@ final class Reflector implements ReflectorInterface
 
     public function reflectProperty(object|string $class, string $property): ReflectionProperty
     {
-        $className = $this->reflectClass($class)->getName();
+        $className = ($this->classCache ??= new ClassReflectionCache())->reflect($class)->getName();
 
         return $this->properties[$className][$property]
             ??= new ReflectionProperty($className, $property);

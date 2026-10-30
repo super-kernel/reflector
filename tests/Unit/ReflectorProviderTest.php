@@ -43,11 +43,7 @@ final class ReflectorProviderTest extends TestCase
     }
 
     /**
-     * These assertions protect the public interface contract even when static types already imply it.
-     *
      * @throws Throwable When fixture setup or the operation under test throws
-     *
-     * @noinspection PhpConditionAlreadyCheckedInspection
      */
     public function testCreatesIndependentReflectionCaches(): void
     {

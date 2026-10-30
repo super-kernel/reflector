@@ -127,16 +127,16 @@ final class ReflectorFacadeTest extends TestCase
     }
 
     /**
-     * Attempts a forbidden private-helper call through the public facade.
+     * Attempts a helper call that the reflector interface does not declare through the public facade.
      *
      * @noinspection PhpUndefinedMethodInspection
      */
-    public function testDoesNotExposeTheReflectorsPrivateHelpers(): void
+    public function testDoesNotExposeMethodsOutsideTheReflectorInterface(): void
     {
         new ReflectorProvider()();
         $this->expectException(Error::class);
         $this->expectExceptionMessageIsOrContains(
-            'Call to private method SuperKernel\\Reflector\\Reflector::symbolKey()',
+            'Call to undefined method SuperKernel\\Reflector\\Reflector::symbolKey()',
         );
 
         ReflectorFacade::symbolKey('Example');

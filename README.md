@@ -5,8 +5,8 @@ Repeating the same request through one `SuperKernel\Reflector\Reflector` instanc
 object whenever PHP exposes a stable identity for that target. Separate instances have independent caches.
 
 The component requires PHP 8.4.27 or later in the 8.4.x series, `ext-reflection`, `super-kernel/contract`, and `super-kernel/attribute`. Its implementation
-is `SuperKernel\Reflector\Reflector`, which implements `ReflectorInterface` and owns all reflection logic and cache
-properties as instance members. `SuperKernel\Reflector\Provider\ReflectorProvider` uses
+is `SuperKernel\Reflector\Reflector`, which implements `ReflectorInterface` and owns every reflection cache as
+instance state. `SuperKernel\Reflector\Provider\ReflectorProvider` uses
 `#[FactoryProvider(ReflectorInterface::class)]`; invoking it creates a `Reflector` and initializes the static facade
 with that same instance.
 
@@ -66,24 +66,24 @@ into component-specific models or exceptions.
 
 ## Supported reflection entry points
 
-| Interface method | Native result |
-| --- | --- |
-| `reflectClass()` | `ReflectionClass` |
-| `reflectClassConstant()` | `ReflectionClassConstant` |
-| `reflectConstant()` | `ReflectionConstant` |
-| `reflectEnum()` | `ReflectionEnum` |
-| `reflectEnumUnitCase()` | `ReflectionEnumUnitCase` or `ReflectionEnumBackedCase` |
-| `reflectEnumBackedCase()` | `ReflectionEnumBackedCase` |
-| `reflectExtension()` | `ReflectionExtension` |
-| `reflectZendExtension()` | `ReflectionZendExtension` |
-| `reflectFunction()` | `ReflectionFunction` |
-| `reflectMethod()` | `ReflectionMethod` |
-| `reflectParameter()` | `ReflectionParameter` |
-| `reflectObject()` | `ReflectionObject` |
-| `reflectProperty()` | `ReflectionProperty` |
-| `reflectGenerator()` | `ReflectionGenerator` |
-| `reflectFiber()` | `ReflectionFiber` |
-| `reflectReference()` | `ReflectionReference` or `null` |
+| Interface method          | Native result                                          |
+|---------------------------|--------------------------------------------------------|
+| `reflectClass()`          | `ReflectionClass`                                      |
+| `reflectClassConstant()`  | `ReflectionClassConstant`                              |
+| `reflectConstant()`       | `ReflectionConstant`                                   |
+| `reflectEnum()`           | `ReflectionEnum`                                       |
+| `reflectEnumUnitCase()`   | `ReflectionEnumUnitCase` or `ReflectionEnumBackedCase` |
+| `reflectEnumBackedCase()` | `ReflectionEnumBackedCase`                             |
+| `reflectExtension()`      | `ReflectionExtension`                                  |
+| `reflectZendExtension()`  | `ReflectionZendExtension`                              |
+| `reflectFunction()`       | `ReflectionFunction`                                   |
+| `reflectMethod()`         | `ReflectionMethod`                                     |
+| `reflectParameter()`      | `ReflectionParameter`                                  |
+| `reflectObject()`         | `ReflectionObject`                                     |
+| `reflectProperty()`       | `ReflectionProperty`                                   |
+| `reflectGenerator()`      | `ReflectionGenerator`                                  |
+| `reflectFiber()`          | `ReflectionFiber`                                      |
+| `reflectReference()`      | `ReflectionReference` or `null`                        |
 
 `ReflectionAttribute` and the `ReflectionType` subclasses are obtained from the cached native reflections that own
 them; PHP does not expose public constructors for those result types.
@@ -99,10 +99,10 @@ maps owned by the reflector instance.
 `ReflectionReference` values are cached by `ReflectionReference::getId()`. A non-reference array element returns
 `null` and creates no cache entry.
 
-All cache properties and reflection methods, including private helpers, belong to `Reflector` instances. Releasing
-an instance releases its caches; a container or the facade can keep an instance alive while it is in use. There is
-no cache serialization, source-change invalidation, or automatic clearing API. PHP class and function declarations
-cannot be replaced during one process lifetime.
+Reflection methods and every cache belong to `Reflector` instances, including the class and enum caches held by
+internal collaborators that each instance creates. Releasing an instance releases its caches; a container or the
+facade can keep an instance alive while it is in use. There is no cache serialization, source-change invalidation,
+or automatic clearing API. PHP class and function declarations cannot be replaced during one process lifetime.
 
 ## Development
 
