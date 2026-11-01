@@ -1,16 +1,14 @@
+<p align="right">
+  <strong>English</strong> | <a href="README.zh-CN.md">中文文档</a>
+</p>
+
 # SuperKernel Reflector
 
-`super-kernel/reflector` encapsulates PHP's native Reflection entry points behind an instance cache.
-Repeating the same request through one `SuperKernel\Reflector\Reflector` instance returns the same native reflection
-object whenever PHP exposes a stable identity for that target. Separate instances have independent caches.
-
-The component requires PHP 8.4.27 or later in the 8.4.x series, `ext-reflection`, `super-kernel/contract`, and `super-kernel/attribute`. Its implementation
-is `SuperKernel\Reflector\Reflector`, which implements `ReflectorInterface` and owns every reflection cache as
-instance state. `SuperKernel\Reflector\Provider\ReflectorProvider` uses
-`#[FactoryProvider(ReflectorInterface::class)]`; invoking it creates a `Reflector` and initializes the static facade
-with that same instance.
+`super-kernel/reflector` encapsulates PHP's native Reflection entry points behind an instance cache. Repeating the same request through one `SuperKernel\Reflector\Reflector` instance returns the same native reflection object whenever PHP exposes a stable identity for that target. Separate instances have independent caches.
 
 ## Usage
+
+Inject `SuperKernel\Contract\ReflectorInterface`:
 
 ```php
 use SuperKernel\Contract\ReflectorInterface;
@@ -37,8 +35,7 @@ $reflector = new Reflector();
 $method = $reflector->reflectMethod(Service::class, 'handle');
 ```
 
-For instance calls, construct `Reflector` directly or invoke the factory. For facade calls, initialize the factory
-first; DI bootstrap already does this in each process:
+`SuperKernel\Reflector\Provider\ReflectorProvider` supplies `ReflectorInterface` to the container. Each invocation creates a new `Reflector` and makes it the instance behind the static `ReflectorFacade`. DI bootstrap already invokes it in each process; elsewhere, invoke it before using the facade:
 
 ```php
 use SuperKernel\Reflector\Facade\ReflectorFacade;
@@ -49,20 +46,9 @@ $method = $reflector->reflectMethod(Service::class, 'handle');
 $sameMethod = ReflectorFacade::reflectMethod(Service::class, 'handle');
 ```
 
-The facade lives in this component under `SuperKernel\Reflector\Facade`. It declares no constructor and exposes only
-`__callStatic()`. The factory uses a closure bound to the facade's class scope to set
-its private static reflector; no public setter is exposed. Calling it before initialization throws `LogicException`.
-Each factory invocation replaces the facade's reference with its newly produced instance. Positional and named
-arguments, native results, and native reflection failures pass through to that instance unchanged.
-The facade shares only that instance's cache. Initializing it with another instance does not change existing
-reflector instances or their caches.
+Calling the facade before initialization throws `LogicException`; it has no public setter. Positional and named arguments, native results, and native reflection failures pass through to the current instance unchanged. The facade shares only that instance's cache. Initializing it with another instance does not change existing reflector instances or their caches.
 
-`ReflectorProvider` creates a `ReflectorInterface` service. Direct composition uses `new ReflectorProvider()()`
-or `new Reflector()`; service consumers inject the interface or use the initialized facade.
-
-Every result is the corresponding native PHP reflection object, so callers retain the complete built-in inspection
-API. Native name resolution, autoloading, live runtime state, and `ReflectionException` behavior are not translated
-into component-specific models or exceptions.
+Every result is the corresponding native PHP reflection object, so callers retain the complete built-in inspection API. Native name resolution, autoloading, live runtime state, and `ReflectionException` behavior are not translated into component-specific models or exceptions.
 
 ## Supported reflection entry points
 
@@ -85,33 +71,12 @@ into component-specific models or exceptions.
 | `reflectFiber()`          | `ReflectionFiber`                                      |
 | `reflectReference()`      | `ReflectionReference` or `null`                        |
 
-`ReflectionAttribute` and the `ReflectionType` subclasses are obtained from the cached native reflections that own
-them; PHP does not expose public constructors for those result types.
+`ReflectionAttribute` and the `ReflectionType` subclasses are obtained from the cached native reflections that own them; PHP does not expose public constructors for those result types.
 
 ## Cache boundary
 
-Symbol reflections are cached by PHP's name semantics. Class aliases are reconciled through the canonical name
-reported by native reflection; class, method, function, and extension names are case-insensitive, while property,
-constant, parameter, and enum-case names retain their native case-sensitive identity.
+Symbol reflections are cached by PHP's name semantics. Class aliases are reconciled through the canonical name reported by native reflection; class, method, function, and extension names are case-insensitive, while property, constant, parameter, and enum-case names retain their native case-sensitive identity.
 
-Closure functions, callable-object parameters, object reflections, generators, and fibers use weak object keys in
-maps owned by the reflector instance.
-`ReflectionReference` values are cached by `ReflectionReference::getId()`. A non-reference array element returns
-`null` and creates no cache entry.
+Closure functions, callable-object parameters, object reflections, generators, and fibers are cached under weak object keys. `ReflectionReference` values are cached by `ReflectionReference::getId()`. A non-reference array element returns `null` and creates no cache entry.
 
-Reflection methods and every cache belong to `Reflector` instances, including the class and enum caches held by
-internal collaborators that each instance creates. Releasing an instance releases its caches; a container or the
-facade can keep an instance alive while it is in use. There is no cache serialization, source-change invalidation,
-or automatic clearing API. PHP class and function declarations cannot be replaced during one process lifetime.
-
-## Development
-
-Use a PHP 8.4 Composer in this package's checkout:
-
-```bash
-composer install
-composer validate --strict
-composer test
-composer format:check
-composer format
-```
+Every cache belongs to its `Reflector` instance. Releasing an instance releases its caches; a container or the facade can keep an instance alive while it is in use. There is no cache serialization, source-change invalidation, or automatic clearing API. PHP class and function declarations cannot be replaced during one process lifetime.
