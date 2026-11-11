@@ -4,79 +4,111 @@
 
 # SuperKernel Reflector
 
-`super-kernel/reflector` 把 PHP 原生的反射入口封装在一个实例缓存之后。只要 PHP 为目标提供稳定的身份，通过同一个 `SuperKernel\Reflector\Reflector` 实例重复同样的请求，就会返回同一个原生反射对象。不同的实例拥有各自独立的缓存。
+`super-kernel/reflector` 返回 PHP 原生的反射对象并保留它们，因此再次向同一个反射器请求同一个类、方法或其他符号时，会返回同一个对象，而不是重新反射。
 
-## 用法
+## 安装
 
-注入 `SuperKernel\Contract\ReflectorInterface`：
+```bash
+composer require super-kernel/reflector
+```
+
+本包需要 PHP 默认自带的 `reflection` 扩展。
+
+## 提供的能力
+
+- 一个反射器，覆盖类、方法、属性、常量、枚举及其成员、函数、参数、扩展、对象、生成器、纤程和引用。
+- 带有完整 API 的原生 `Reflection*` 对象，在同一个反射器中复用。
+- 与 PHP 一致的名称匹配：类别名、开头的反斜杠以及类名和方法名的大小写变体都会找到同一个对象。
+- 一个为 SuperKernel 容器提供 `ReflectorInterface` 的工厂提供者。
+- 一个静态门面，供无法通过注入接收反射器的代码使用。
+
+它不会：
+
+- 把结果包装成自己的模型，或者转换 PHP 的 `ReflectionException`；
+- 在反射器实例之间或进程之间共享缓存；
+- 察觉代码的变化：它的缓存没有失效、清除或序列化机制。
+
+## 快速开始
+
+反射项目中的一个类。将它保存为 `src/Billing/Invoice.php`：
 
 ```php
-use SuperKernel\Contract\ReflectorInterface;
+<?php
 
-final readonly class ServiceInspector
+declare(strict_types=1);
+
+namespace Src\Billing;
+
+final class Invoice
 {
-    public function __construct(private ReflectorInterface $reflector)
+    public function __construct(public readonly string $number)
     {
     }
 
-    public function action(): \ReflectionMethod
+    public function total(): int
     {
-        return $this->reflector->reflectMethod(Service::class, 'handle');
+        return 0;
     }
 }
 ```
 
-不使用容器的代码可以直接创建反射器：
+用三种写法向一个反射器请求同一个方法，再向第二个反射器请求一次。将脚本保存为 `bin/reflect.php`：
 
 ```php
+<?php
+
+declare(strict_types=1);
+
+use Src\Billing\Invoice;
 use SuperKernel\Reflector\Reflector;
 
+require dirname(__DIR__) . '/vendor/autoload.php';
+
 $reflector = new Reflector();
-$method = $reflector->reflectMethod(Service::class, 'handle');
+$method = $reflector->reflectMethod(Invoice::class, 'total');
+
+echo $method->getReturnType(), PHP_EOL;
+var_dump($method === $reflector->reflectMethod('Src\Billing\Invoice::total'));
+var_dump($method === $reflector->reflectMethod('\src\billing\INVOICE', 'TOTAL'));
+var_dump($method === new Reflector()->reflectMethod(Invoice::class, 'total'));
 ```
 
-`SuperKernel\Reflector\Provider\ReflectorProvider` 向容器提供 `ReflectorInterface`。每次调用都会创建一个新的 `Reflector`，并让它成为静态 `ReflectorFacade` 背后的实例。DI 启动时已经在每个进程中调用过它；在其他场景下，使用 facade 之前先调用它：
+构建项目并运行脚本：
 
-```php
-use SuperKernel\Reflector\Facade\ReflectorFacade;
-use SuperKernel\Reflector\Provider\ReflectorProvider;
-
-$reflector = new ReflectorProvider()();
-$method = $reflector->reflectMethod(Service::class, 'handle');
-$sameMethod = ReflectorFacade::reflectMethod(Service::class, 'handle');
+```bash
+skernel build
+php bin/reflect.php
 ```
 
-在初始化之前调用 facade 会抛出 `LogicException`；它没有公开的 setter。位置参数和命名参数、原生结果以及原生反射失败，都会原样传给当前实例或从当前实例传出。facade 只共享该实例的缓存。用另一个实例初始化 facade，不会改变已有的反射器实例及其缓存。
+它会打印：
 
-每个结果都是对应的 PHP 原生反射对象，调用方保留完整的内置检查 API。原生的名称解析、自动加载、运行时状态和 `ReflectionException` 行为都不会被转换为组件专属的模型或异常。
+```text
+int
+bool(true)
+bool(true)
+bool(false)
+```
 
-## 支持的反射入口
+## 公开接口
 
-| 接口方法                  | 原生结果                                               |
-|---------------------------|--------------------------------------------------------|
-| `reflectClass()`          | `ReflectionClass`                                      |
-| `reflectClassConstant()`  | `ReflectionClassConstant`                              |
-| `reflectConstant()`       | `ReflectionConstant`                                   |
-| `reflectEnum()`           | `ReflectionEnum`                                       |
-| `reflectEnumUnitCase()`   | `ReflectionEnumUnitCase` 或 `ReflectionEnumBackedCase` |
-| `reflectEnumBackedCase()` | `ReflectionEnumBackedCase`                             |
-| `reflectExtension()`      | `ReflectionExtension`                                  |
-| `reflectZendExtension()`  | `ReflectionZendExtension`                              |
-| `reflectFunction()`       | `ReflectionFunction`                                   |
-| `reflectMethod()`         | `ReflectionMethod`                                     |
-| `reflectParameter()`      | `ReflectionParameter`                                  |
-| `reflectObject()`         | `ReflectionObject`                                     |
-| `reflectProperty()`       | `ReflectionProperty`                                   |
-| `reflectGenerator()`      | `ReflectionGenerator`                                  |
-| `reflectFiber()`          | `ReflectionFiber`                                      |
-| `reflectReference()`      | `ReflectionReference` 或 `null`                        |
+| 名称 | 类别 | 用途 |
+| --- | --- | --- |
+| `SuperKernel\Contract\ReflectorInterface` | 接口 | 服务通过注入接收的反射器。 |
+| `SuperKernel\Reflector\Reflector` | 类 | 反射器；`new Reflector()` 创建一个缓存为空的反射器。 |
+| `SuperKernel\Reflector\Provider\ReflectorProvider` | 类 | `ReflectorInterface` 的工厂提供者；每次调用都创建一个新的反射器，并让门面使用它。 |
+| `SuperKernel\Reflector\Facade\ReflectorFacade` | 类 | 以 `ReflectorInterface` 的方法进行静态调用，转发给最近一次 `ReflectorProvider` 调用所创建的反射器。 |
 
-`ReflectionAttribute` 和各个 `ReflectionType` 子类，从持有它们的已缓存原生反射中获取；PHP 没有为这些结果类型提供公开的构造函数。
+## 需要了解的行为
 
-## 缓存边界
+- 失败由 PHP 自己报告：类不存在时抛出带有 PHP 消息的 `ReflectionException`，例如 `Class "Src\Nope" does not exist`。
+- 在进程中调用 `ReflectorProvider` 之前，`ReflectorFacade` 抛出 `LogicException`，消息为 `ReflectorFacade requires initialization through ReflectorProvider.`。`super-kernel/di` 在创建根容器时会调用它。
+- 类名、方法名、函数名和扩展名的匹配不区分大小写；属性、常量、参数和枚举成员的名称按原样精确匹配。
+- 反射器在存活期间保留它的反射；对象、闭包、生成器和纤程的反射不会使这些对象保持存活。
 
-符号反射按 PHP 的名称语义缓存。类别名通过原生反射报告的规范名称统一；类、方法、函数和扩展名不区分大小写，而属性、常量、参数和枚举成员名保留其原生的大小写敏感身份。
+## 文档
 
-闭包函数、可调用对象的参数、对象反射、生成器和 Fiber 以弱对象键缓存。`ReflectionReference` 的值按 `ReflectionReference::getId()` 缓存。非引用的数组元素返回 `null`，不会创建缓存条目。
+开发者文档用完整示例介绍每个入口、缓存规则、容器和门面：[SuperKernel Reflector](https://github.com/super-kernel/.github/blob/main/docs/components/reflector.zh-CN.md)。
 
-所有缓存都属于各自的 `Reflector` 实例。释放实例即释放其缓存；在使用期间，容器或 facade 可以让实例保持存活。不提供缓存序列化、源码变更失效或自动清除 API。在一个进程的生命周期内，PHP 的类和函数声明无法被替换。
+## 许可证
+
+基于 MIT 许可证发布，详见 [LICENSE](LICENSE)。

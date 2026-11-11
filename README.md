@@ -4,79 +4,111 @@
 
 # SuperKernel Reflector
 
-`super-kernel/reflector` encapsulates PHP's native Reflection entry points behind an instance cache. Repeating the same request through one `SuperKernel\Reflector\Reflector` instance returns the same native reflection object whenever PHP exposes a stable identity for that target. Separate instances have independent caches.
+`super-kernel/reflector` returns PHP's native reflection objects and keeps them, so that asking one reflector again for the same class, method, or other symbol returns the same object instead of reflecting it anew.
 
-## Usage
+## Installation
 
-Inject `SuperKernel\Contract\ReflectorInterface`:
+```bash
+composer require super-kernel/reflector
+```
+
+The package needs the `reflection` extension, which PHP includes by default.
+
+## What it provides
+
+- A reflector for classes, methods, properties, constants, enums and their cases, functions, parameters, extensions, objects, generators, fibers, and references.
+- The native `Reflection*` objects with their complete API, reused within one reflector.
+- Name matching as PHP does it: class aliases, a leading backslash, and case variants of class and method names find the same object.
+- A factory provider that supplies `ReflectorInterface` to a SuperKernel container.
+- A static facade for code that cannot receive the reflector by injection.
+
+It does not:
+
+- wrap the results in its own models or translate PHP's `ReflectionException`;
+- share its cache between reflector instances or processes;
+- notice that code changed: it has no invalidation, clearing, or serialization of its cache.
+
+## Quick start
+
+Reflect a class of the project. Save it as `src/Billing/Invoice.php`:
 
 ```php
-use SuperKernel\Contract\ReflectorInterface;
+<?php
 
-final readonly class ServiceInspector
+declare(strict_types=1);
+
+namespace Src\Billing;
+
+final class Invoice
 {
-    public function __construct(private ReflectorInterface $reflector)
+    public function __construct(public readonly string $number)
     {
     }
 
-    public function action(): \ReflectionMethod
+    public function total(): int
     {
-        return $this->reflector->reflectMethod(Service::class, 'handle');
+        return 0;
     }
 }
 ```
 
-Code that does not use the container can create a reflector directly:
+Ask a reflector for one method in three spellings, and a second reflector once. Save the script as `bin/reflect.php`:
 
 ```php
+<?php
+
+declare(strict_types=1);
+
+use Src\Billing\Invoice;
 use SuperKernel\Reflector\Reflector;
 
+require dirname(__DIR__) . '/vendor/autoload.php';
+
 $reflector = new Reflector();
-$method = $reflector->reflectMethod(Service::class, 'handle');
+$method = $reflector->reflectMethod(Invoice::class, 'total');
+
+echo $method->getReturnType(), PHP_EOL;
+var_dump($method === $reflector->reflectMethod('Src\Billing\Invoice::total'));
+var_dump($method === $reflector->reflectMethod('\src\billing\INVOICE', 'TOTAL'));
+var_dump($method === new Reflector()->reflectMethod(Invoice::class, 'total'));
 ```
 
-`SuperKernel\Reflector\Provider\ReflectorProvider` supplies `ReflectorInterface` to the container. Each invocation creates a new `Reflector` and makes it the instance behind the static `ReflectorFacade`. DI bootstrap already invokes it in each process; elsewhere, invoke it before using the facade:
+Build the project and run the script:
 
-```php
-use SuperKernel\Reflector\Facade\ReflectorFacade;
-use SuperKernel\Reflector\Provider\ReflectorProvider;
-
-$reflector = new ReflectorProvider()();
-$method = $reflector->reflectMethod(Service::class, 'handle');
-$sameMethod = ReflectorFacade::reflectMethod(Service::class, 'handle');
+```bash
+skernel build
+php bin/reflect.php
 ```
 
-Calling the facade before initialization throws `LogicException`; it has no public setter. Positional and named arguments, native results, and native reflection failures pass through to the current instance unchanged. The facade shares only that instance's cache. Initializing it with another instance does not change existing reflector instances or their caches.
+It prints:
 
-Every result is the corresponding native PHP reflection object, so callers retain the complete built-in inspection API. Native name resolution, autoloading, live runtime state, and `ReflectionException` behavior are not translated into component-specific models or exceptions.
+```text
+int
+bool(true)
+bool(true)
+bool(false)
+```
 
-## Supported reflection entry points
+## Public surface
 
-| Interface method          | Native result                                          |
-|---------------------------|--------------------------------------------------------|
-| `reflectClass()`          | `ReflectionClass`                                      |
-| `reflectClassConstant()`  | `ReflectionClassConstant`                              |
-| `reflectConstant()`       | `ReflectionConstant`                                   |
-| `reflectEnum()`           | `ReflectionEnum`                                       |
-| `reflectEnumUnitCase()`   | `ReflectionEnumUnitCase` or `ReflectionEnumBackedCase` |
-| `reflectEnumBackedCase()` | `ReflectionEnumBackedCase`                             |
-| `reflectExtension()`      | `ReflectionExtension`                                  |
-| `reflectZendExtension()`  | `ReflectionZendExtension`                              |
-| `reflectFunction()`       | `ReflectionFunction`                                   |
-| `reflectMethod()`         | `ReflectionMethod`                                     |
-| `reflectParameter()`      | `ReflectionParameter`                                  |
-| `reflectObject()`         | `ReflectionObject`                                     |
-| `reflectProperty()`       | `ReflectionProperty`                                   |
-| `reflectGenerator()`      | `ReflectionGenerator`                                  |
-| `reflectFiber()`          | `ReflectionFiber`                                      |
-| `reflectReference()`      | `ReflectionReference` or `null`                        |
+| Name | Kind | Purpose |
+| --- | --- | --- |
+| `SuperKernel\Contract\ReflectorInterface` | Interface | The reflector that services receive by injection. |
+| `SuperKernel\Reflector\Reflector` | Class | The reflector; `new Reflector()` creates one with an empty cache. |
+| `SuperKernel\Reflector\Provider\ReflectorProvider` | Class | The factory provider of `ReflectorInterface`; each call creates a new reflector and makes it the facade's. |
+| `SuperKernel\Reflector\Facade\ReflectorFacade` | Class | Static calls with the methods of `ReflectorInterface`, forwarded to the reflector of the last `ReflectorProvider` call. |
 
-`ReflectionAttribute` and the `ReflectionType` subclasses are obtained from the cached native reflections that own them; PHP does not expose public constructors for those result types.
+## Behavior to know
 
-## Cache boundary
+- Failures are PHP's own: a missing class raises `ReflectionException` with PHP's message, such as `Class "Src\Nope" does not exist`.
+- `ReflectorFacade` raises `LogicException` with the message `ReflectorFacade requires initialization through ReflectorProvider.` until `ReflectorProvider` has been called in the process. `super-kernel/di` calls it when it creates the root container.
+- Class, method, function, and extension names are matched without regard to case; property, constant, parameter, and enum case names are matched exactly.
+- A reflector keeps its reflections as long as it lives; reflections of objects, closures, generators, and fibers do not keep those objects alive.
 
-Symbol reflections are cached by PHP's name semantics. Class aliases are reconciled through the canonical name reported by native reflection; class, method, function, and extension names are case-insensitive, while property, constant, parameter, and enum-case names retain their native case-sensitive identity.
+## Documentation
 
-Closure functions, callable-object parameters, object reflections, generators, and fibers are cached under weak object keys. `ReflectionReference` values are cached by `ReflectionReference::getId()`. A non-reference array element returns `null` and creates no cache entry.
+The developer documentation describes every entry point, the cache rules, the container, and the facade with complete examples: [SuperKernel Reflector](https://github.com/super-kernel/.github/blob/main/docs/components/reflector.md).
 
-Every cache belongs to its `Reflector` instance. Releasing an instance releases its caches; a container or the facade can keep an instance alive while it is in use. There is no cache serialization, source-change invalidation, or automatic clearing API. PHP class and function declarations cannot be replaced during one process lifetime.
+## License
+
+Released under the MIT License. See [LICENSE](LICENSE).
