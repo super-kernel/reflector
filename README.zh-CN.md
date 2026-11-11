@@ -73,9 +73,10 @@ var_dump($method === $reflector->reflectMethod('\src\billing\INVOICE', 'TOTAL'))
 var_dump($method === new Reflector()->reflectMethod(Invoice::class, 'total'));
 ```
 
-运行脚本：
+构建项目并运行脚本：
 
 ```bash
+skernel build
 php bin/reflect.php
 ```
 

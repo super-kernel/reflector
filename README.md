@@ -73,9 +73,10 @@ var_dump($method === $reflector->reflectMethod('\src\billing\INVOICE', 'TOTAL'))
 var_dump($method === new Reflector()->reflectMethod(Invoice::class, 'total'));
 ```
 
-Run the script:
+Build the project and run the script:
 
 ```bash
+skernel build
 php bin/reflect.php
 ```
 
